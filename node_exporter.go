@@ -14,15 +14,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
 	"os/user"
 	"runtime"
 	"slices"
 	"sort"
+	"syscall"
+	"time"
 
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/common/promslog/flag"
@@ -244,8 +248,26 @@ func main() {
 	}
 
 	server := &http.Server{}
-	if err := web.ListenAndServe(server, toolkitFlags, logger); err != nil {
-		logger.Error(err.Error())
-		os.Exit(1)
+	srvc := make(chan error, 1)
+	term := make(chan os.Signal, 1)
+	signal.Notify(term, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		srvc <- web.ListenAndServe(server, toolkitFlags, logger)
+	}()
+
+	select {
+	case <-term:
+		logger.Info("Received SIGTERM, exiting gracefully...")
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			logger.Error("Server shutdown error", "err", err)
+		}
+	case err := <-srvc:
+		if err != nil {
+			logger.Error(err.Error())
+			os.Exit(1)
+		}
 	}
 }
