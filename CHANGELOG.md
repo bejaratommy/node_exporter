@@ -3,7 +3,7 @@
 * [CHANGE]
 * [FEATURE]
 * [ENHANCEMENT]
-* [BUGFIX]
+* [BUGFIX] textfile: Use an explicit HELP when another file for the same metric omits it #3052
 
 ## 1.10.2 / 2025-10-25
 

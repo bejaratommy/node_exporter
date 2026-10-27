@@ -247,17 +247,33 @@ func (c *textFileCollector) Update(ch chan<- prometheus.Metric) error {
 		}
 	}
 
-	mfHelp := make(map[string]*string)
-	for _, mf := range parsedFamilies {
-		if mf.Help == nil {
-			if help, ok := mfHelp[*mf.Name]; ok {
-				mf.Help = help
-				continue
-			}
-			help := fmt.Sprintf("Metric read from %s", strings.Join(metricsNamesToFiles[*mf.Name], ", "))
-			mf.Help = &help
-			mfHelp[*mf.Name] = &help
+	// An explicit HELP from any file applies to samples that omit HELP.
+	// Synthesizing "Metric read from ..." only for the omitted file makes
+	// the scrape fail, because the same metric then has two help strings.
+	explicitHelp := map[string]string{}
+	for name, helpTexts := range metricsNamesToHelpTexts {
+		if helpTexts[1] == "" && helpTexts[0] != "" {
+			explicitHelp[name] = helpTexts[0]
 		}
+	}
+
+	synthesizedHelp := map[string]*string{}
+	for _, mf := range parsedFamilies {
+		if mf.Help != nil && *mf.Help != "" {
+			continue
+		}
+		if help, ok := explicitHelp[*mf.Name]; ok {
+			h := help
+			mf.Help = &h
+			continue
+		}
+		if help, ok := synthesizedHelp[*mf.Name]; ok {
+			mf.Help = help
+			continue
+		}
+		helpText := fmt.Sprintf("Metric read from %s", strings.Join(metricsNamesToFiles[*mf.Name], ", "))
+		synthesizedHelp[*mf.Name] = &helpText
+		mf.Help = synthesizedHelp[*mf.Name]
 	}
 
 	for _, mf := range parsedFamilies {
